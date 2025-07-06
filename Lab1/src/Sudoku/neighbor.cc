@@ -6,6 +6,10 @@
 
 #include <algorithm>
 
+
+
+extern "C" {
+
 int neighbors[N][NEIGHBOR];
 
 static void mark_adjacent(bool adjacent[ROW][COL], int row, int col)
@@ -120,4 +124,6 @@ bool solved()
     }
   }
   return true;
+}
+
 }
