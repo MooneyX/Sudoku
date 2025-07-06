@@ -2,8 +2,10 @@
 #include <memory.h>
 #include <map>
 #include <vector>
-
 #include "sudoku.h"
+
+extern "C" {
+
 using namespace std;
 
 struct Node;
@@ -252,8 +254,11 @@ struct Dance
     }
 };
 
-bool solve_sudoku_dancing_links(int unused)
+bool solve_sudoku_dancing_links(int unused, int tid)
 {
+  int *board = Board[tid];
   Dance d(board);
   return d.solve();
+}
+
 }
