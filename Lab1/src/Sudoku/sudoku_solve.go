@@ -18,7 +18,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"unsafe"
 )
 
 var threadNum = flag.Int("thread_num", 12, "num of threads")
@@ -86,17 +85,17 @@ func input_thread(waitGroup *sync.WaitGroup, inCh chan Puzzle) {
 
 func worker_thread(waitGroup *sync.WaitGroup, inCh chan Puzzle, outCh chan Puzzle, threadId int) {
 	defer waitGroup.Done()
-	puzzleChar := C.malloc(C.size_t(82 * C.sizeof_char))
-	defer C.free(unsafe.Pointer(puzzleChar))
 	solveCnt := 0
 	for {
 		puzzleWithId, ok := <-inCh
 		if ok {
 			puzzle := puzzleWithId.puzzle
 			id := puzzleWithId.id
-			C.memcpy(puzzleChar, unsafe.Pointer(C.CString(puzzle)), C.size_t(82))
-			CStr := (*C.char)(puzzleChar)
-			C.input(CStr, C.int(threadId))
+			for i := 0; i < 81; i++ {
+				c := puzzle[i]
+				// slog.Debug("worker_thread", "", threadId, "", c)
+				C.Board[threadId][i] = C.int(c - '0')
+			}
 			ok := C.solve_sudoku_dancing_links(0, C.int(threadId))
 			if !ok {
 				slog.Error("worker_thread", "", id, "solve sudoku", "failed")

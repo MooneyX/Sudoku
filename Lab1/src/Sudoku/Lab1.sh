@@ -211,7 +211,7 @@ Advanced_Test(){
 		cat ${Current_Folder}/${answer_data} >> ${Current_Folder}/${Answer}
 	done < $3
 
-	sleep 30
+	sleep 50
 	screen -S $1 -X stuff "^C^M"
 	screen -S $1 -X quit
 
