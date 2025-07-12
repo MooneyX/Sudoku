@@ -1,17 +1,16 @@
 package main
 
-/*
-#cgo CFLAGS: -I.
-#cgo LDFLAGS: -L.
-#include <stdio.h>
-#include <stdbool.h>
-#include <stdlib.h>
-#include <string.h>
-#include "sudoku.h"
-*/
-import "C"
+// /*
+// #cgo CFLAGS: -I.
+// #cgo LDFLAGS: -L.
+// #include <stdio.h>
+// #include <stdbool.h>
+// #include <stdlib.h>
+// #include <string.h>
+// #include "sudoku.h"
+// */
+// import "C"
 import (
-	"container/heap"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -20,45 +19,21 @@ import (
 	"sync"
 )
 
-var threadNum = flag.Int("thread_num", 12, "num of threads")
-var (
-	inNUm  int = 0
-	outNum int = 0
-)
-
 type Puzzle struct {
 	puzzle string
 	id     int
 }
-type PuzzleHeap []Puzzle
 
-func (h PuzzleHeap) Len() int           { return len(h) }
-func (h PuzzleHeap) Less(i, j int) bool { return h[i].id < h[j].id }
-func (h PuzzleHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+var (
+	threadNum     = flag.Int("thread_num", 12, "num of threads")
+	inNUm     int = 0
+	outNum    int = 0
+	waitGroup sync.WaitGroup
+	inCh      = make(chan Puzzle)
+	outCh     = make(chan Puzzle)
+)
 
-// Push 将元素添加到堆中
-func (h *PuzzleHeap) Push(x interface{}) {
-	*h = append(*h, x.(Puzzle))
-}
-
-// Pop 从堆中移除并返回最小元素
-func (h *PuzzleHeap) Pop() interface{} {
-	old := *h
-	n := len(old)
-	x := old[n-1]
-	*h = old[0 : n-1]
-	return x
-}
-
-// Peek 查看堆顶元素而不取出
-func (h *PuzzleHeap) Peek() (interface{}, bool) {
-	if h.Len() == 0 {
-		return nil, false
-	}
-	return (*h)[0], true
-}
-
-func input_thread(waitGroup *sync.WaitGroup, inCh chan Puzzle) {
+func input_thread() {
 	defer waitGroup.Done()
 	for {
 		var filename string
@@ -83,8 +58,10 @@ func input_thread(waitGroup *sync.WaitGroup, inCh chan Puzzle) {
 	}
 }
 
-func worker_thread(waitGroup *sync.WaitGroup, inCh chan Puzzle, outCh chan Puzzle, threadId int) {
+func worker_thread(threadId int) {
 	defer waitGroup.Done()
+	// puzzleChar := C.malloc(C.size_t(82 * C.sizeof_char))
+	// defer C.free(unsafe.Pointer(puzzleChar))
 	solveCnt := 0
 	for {
 		puzzleWithId, ok := <-inCh
@@ -94,9 +71,15 @@ func worker_thread(waitGroup *sync.WaitGroup, inCh chan Puzzle, outCh chan Puzzl
 			for i := 0; i < 81; i++ {
 				c := puzzle[i]
 				// slog.Debug("worker_thread", "", threadId, "", c)
-				C.Board[threadId][i] = C.int(c - '0')
+				Board[threadId][i] = int(c - '0')
 			}
-			ok := C.solve_sudoku_dancing_links(0, C.int(threadId))
+			// C.memcpy(puzzleChar, unsafe.Pointer(C.CString(puzzle)), C.size_t(82))
+			// CStr := (*C.char)(puzzleChar)
+			// C.input(CStr, C.int(threadId))
+			// ok := C.solve_sudoku_dancing_links(0, C.int(threadId))
+			// fmt.Println(Board[threadId])
+			SolveSudokuDancingLinks(0, threadId)
+			// fmt.Println(Board[threadId])
 			if !ok {
 				slog.Error("worker_thread", "", id, "solve sudoku", "failed")
 			}
@@ -106,17 +89,18 @@ func worker_thread(waitGroup *sync.WaitGroup, inCh chan Puzzle, outCh chan Puzzl
 			// fmt.Println()
 			var result strings.Builder
 			for i := 0; i < 81; i++ {
-				result.WriteString(fmt.Sprintf("%d", C.Board[threadId][i]))
+				// result.WriteString(fmt.Sprintf("%d", C.Board[threadId][i]))
+				result.WriteString(fmt.Sprintf("%d", Board[threadId][i]))
 			}
 			// slog.Info("worker_thread", "_", threadId, "puzzle_id", id, "ok", ok, "result", result.String())
 			solveCnt++
-			slog.Info("worker_thread", "_", threadId, "puzzle_id", id, "solveCnt", solveCnt)
+			// slog.Info("worker_thread", "_", threadId, "puzzle_id", id, "solveCnt", solveCnt)
 			outCh <- Puzzle{result.String(), id}
 		}
 	}
 }
 
-func output_thread(waitGroup *sync.WaitGroup, outCh chan Puzzle) {
+func output_thread() {
 	// 打开或创建一个文件用于写入
 	// file, err := os.OpenFile("./test_group_Folder/Basic_Result", os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0644)
 	// if err != nil {
@@ -124,25 +108,26 @@ func output_thread(waitGroup *sync.WaitGroup, outCh chan Puzzle) {
 	// }
 	// defer file.Close()
 	defer waitGroup.Done()
-	resultHeap := &PuzzleHeap{}
+	buffer := make(map[int]string)
 	// loopCnt := 0
 	for {
 		// loopCnt++
 		// slog.Info("output_thread", "loopCnt", loopCnt)
 		select {
 		case resultWithId := <-outCh:
-			heap.Push(resultHeap, resultWithId)
+			buffer[resultWithId.id] = resultWithId.puzzle
 			// slog.Info("output_thread", "resultWithId", resultWithId)
 		default:
 			// slog.Info("output_thread", "heap", "empty")
 		}
-		peek, ok1 := resultHeap.Peek()
-		// slog.Info("output_thread", "peek", peek, "ok1", ok1, "outNum", outNum, "heapLen", resultHeap.Len())
-		if ok1 && peek.(Puzzle).id == outNum {
-			pop := heap.Pop(resultHeap).(Puzzle)
-			// fmt.Fprintln(file, pop.puzzle)
-			fmt.Println(pop.puzzle)
-			outNum++
+		for {
+			result, ok := buffer[outNum]
+			if ok {
+				fmt.Println(result)
+				outNum++
+			} else {
+				break
+			}
 		}
 	}
 }
@@ -156,19 +141,14 @@ func main() {
 		slog.Error("main", "args errer", "threadNum must > 2")
 		return
 	}
-	var waitGroup sync.WaitGroup
-	inCh := make(chan Puzzle)
-	outCh := make(chan Puzzle)
 	waitGroup.Add(1)
-	go input_thread(&waitGroup, inCh)
-	workerNum := *threadNum - 3
+	go input_thread()
+	workerNum := *threadNum - 2
 	for i := 0; i < workerNum; i++ {
 		waitGroup.Add(1)
-		go worker_thread(&waitGroup, inCh, outCh, i)
+		go worker_thread(i)
 	}
 	waitGroup.Add(1)
-	go output_thread(&waitGroup, outCh)
-	waitGroup.Add(1)
-	go output_thread(&waitGroup, outCh)
+	go output_thread()
 	defer waitGroup.Wait()
 }
